@@ -1,43 +1,39 @@
-// Sunset Vice Atelier — gta6-cover-art-01 entry (Node 22, standard library only).
-// Copies app/ and screenshots/ beside this file into the output dir and writes
-// dossier.json via the vendored make.fun library. No network, no writes outside
-// the output dir. Usage: mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
-import { cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+// Sunset Vice Atelier — entrypoint.
+// Copies app/ and screenshots/ into the output directory and writes
+// dossier.json with buildDossier from vendor/makefun-app.ts.
+// Node 22, standard library only, no network, no writes outside the output dir.
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-app.ts';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
-const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)));
+const outDir = resolve(process.env.MAKEFUN_OUTPUT_DIR ?? '/output');
+if (outDir === repoRoot) throw new Error('MAKEFUN_OUTPUT_DIR must not be the repository root');
 
 try {
-  if (!existsSync(join(here, 'app', 'index.html'))) {
-    throw new Error('app/index.html is missing — nothing to hand in');
+  // Preflight: fail fast with a clear message instead of a half-written output.
+  const indexHtml = join(repoRoot, 'app', 'index.html');
+  const shotsDir = join(repoRoot, 'screenshots');
+  if (!existsSync(indexHtml)) throw new Error('app/index.html is missing');
+  if (!existsSync(shotsDir)) throw new Error('screenshots/ is missing');
+  mkdirSync(outDir, { recursive: true });
+  rmSync(join(outDir, 'dossier.json'), { force: true });
+  for (const name of ['app', 'screenshots']) {
+    const target = join(outDir, name);
+    rmSync(target, { recursive: true, force: true });
+    cpSync(join(repoRoot, name), target, { recursive: true });
   }
-  mkdirSync(out, { recursive: true });
-  rmSync(join(out, 'app'), { recursive: true, force: true });
-  rmSync(join(out, 'screenshots'), { recursive: true, force: true });
-  cpSync(join(here, 'app'), join(out, 'app'), { recursive: true });
-  if (existsSync(join(here, 'screenshots'))) {
-    cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
-  } else {
-    mkdirSync(join(out, 'screenshots'), { recursive: true });
-  }
-  const dossierPath = join(out, 'dossier.json');
-  writeFileSync(
-    dossierPath,
-    buildDossier(out, {
-      text_max_bytes: 163840,
-      screenshots: { max: 4, max_bytes: 262144 },
-      app_max_files: 993,
-      app_max_bytes: 50331648,
-      app_path_max_bytes: 1000,
-    }),
-  );
-  const bytes = statSync(dossierPath).size;
-  if (bytes === 0) throw new Error('dossier.json came out empty');
-  console.log(`Sunset Vice Atelier dossier written to ${dossierPath} (${bytes} bytes)`);
+  const dossier = buildDossier(outDir, {
+    text_max_bytes: 163840,
+    screenshots: { max: 4, max_bytes: 262144 },
+    app_max_files: 993,
+    app_max_bytes: 50331648,
+  });
+  writeFileSync(join(outDir, 'dossier.json'), dossier);
+  if (!existsSync(join(outDir, 'dossier.json'))) throw new Error('dossier.json was not written');
+  console.log(`Sunset Vice Atelier: wrote ${join(outDir, 'dossier.json')} (${dossier.length} bytes)`);
 } catch (err) {
-  console.error(`main.ts failed: ${err instanceof Error ? err.message : String(err)}`);
+  console.error(`Sunset Vice Atelier: failed: ${(err as Error).message}`);
   process.exit(1);
 }

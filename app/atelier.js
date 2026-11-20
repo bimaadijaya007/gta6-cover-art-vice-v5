@@ -1,223 +1,311 @@
-// Sunset Vice Atelier — GTA-style multi-panel cover maker. Canvas 2D only, offline.
+// Sunset Vice Atelier — all app logic: state, layout math, grades,
+// caption drawing, export, query params, drag / pan / zoom.
+// Canvas 2D only, fully offline; photos never leave the machine.
 (function () {
   'use strict';
-  var LAYOUTS = ['hero', 'split', 'quad', 'solo'];
-  var GRADES = {
-    sunset: ['#ff7a18', '#ff2e63', '#7b2ff7'],
-    neon: ['#00e5ff', '#ff2e63', '#b537f2'],
-    golden: ['#ffb347', '#ff8c42', '#ffd166'],
-    mono: ['#888888', '#555555', '#222222'],
-  };
+
   var SIZES = { '1080x1080': [1080, 1080], '1080x1350': [1080, 1350], '1920x1080': [1920, 1080] };
+  var LAYOUT_ORDER = ['hero', 'split', 'quad', 'solo'];
+  // Panel rects in normalised [x, y, w, h] coordinates.
+  var LAYOUTS = {
+    hero: [[0, 0, 0.62, 1], [0.62, 0, 0.38, 0.5], [0.62, 0.5, 0.38, 0.5]],
+    split: [[0, 0, 0.5, 1], [0.5, 0, 0.5, 1]],
+    quad: [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]],
+    solo: [[0, 0, 1, 1]]
+  };
+  var GRADES = {
+    sunset: { stops: [[0, 'rgba(255,122,24,0.34)'], [0.55, 'rgba(255,46,136,0.22)'], [1, 'rgba(90,20,120,0.30)']], filter: 'saturate(1.25) contrast(1.08)' },
+    neon: { stops: [[0, 'rgba(46,230,255,0.30)'], [0.5, 'rgba(120,40,255,0.20)'], [1, 'rgba(255,46,136,0.32)']], filter: 'saturate(1.35) contrast(1.1)' },
+    golden: { stops: [[0, 'rgba(255,197,61,0.30)'], [0.6, 'rgba(255,140,60,0.20)'], [1, 'rgba(255,90,40,0.26)']], filter: 'saturate(1.2) contrast(1.05)' },
+    noir: { stops: [[0, 'rgba(255,255,255,0.06)'], [1, 'rgba(0,0,0,0.34)']], filter: 'grayscale(1) contrast(1.18) brightness(1.05)' }
+  };
+
+  var canvas = document.getElementById('stage');
+  var ctx = canvas.getContext('2d');
+
   var params = new URLSearchParams(location.search);
   var state = {
-    layout: LAYOUTS.indexOf(params.get('layout')) >= 0 ? params.get('layout') : 'hero',
-    grade: params.get('grade') in GRADES ? params.get('grade') : 'sunset',
-    size: params.get('size') in SIZES ? params.get('size') : '1080x1080',
-    title: params.get('caption') || 'SUNSET HEIST',
-    subtitle: 'VICE CITY — 2026',
-    place: 'bottom',
-    zoom: 1,
-    selected: 0,
+    layout: LAYOUTS[params.get('layout')] ? params.get('layout') : 'hero',
+    grade: GRADES[params.get('grade')] ? params.get('grade') : 'sunset',
+    size: SIZES[params.get('size')] ? params.get('size') : '1080x1080',
+    title: (params.get('caption') || 'VICE CITY').slice(0, 24),
+    subtitle: 'SUNSET STORIES',
+    captionPos: params.get('pos') || 'bottom',
+    selected: 0
   };
-  var photos = []; // {img, name, pan:{x,y}, zoom}
-  var canvas = document.getElementById('cover');
-  var ctx = canvas.getContext('2d');
-  var statusEl = document.getElementById('status');
-  var stage = document.getElementById('stage');
+  var photos = []; // {img, name, zoom, panX, panY}
+  var assign = {}; // panel index -> photo index
+  var drag = null;
 
-  function sizeWH() { return SIZES[state.size]; }
-  function panels(w, h) {
-    if (state.layout === 'hero') return [
-      { x: 0, y: 0, w: w * 0.62, h: h },
-      { x: w * 0.62, y: 0, w: w * 0.38, h: h / 2 },
-      { x: w * 0.62, y: h / 2, w: w * 0.38, h: h / 2 },
-    ];
-    if (state.layout === 'split') return [
-      { x: 0, y: 0, w: w / 2, h: h },
-      { x: w / 2, y: 0, w: w / 2, h: h },
-    ];
-    if (state.layout === 'quad') return [
-      { x: 0, y: 0, w: w / 2, h: h / 2 },
-      { x: w / 2, y: 0, w: w / 2, h: h / 2 },
-      { x: 0, y: h / 2, w: w / 2, h: h / 2 },
-      { x: w / 2, y: h / 2, w: w / 2, h: h / 2 },
-    ];
-    return [{ x: 0, y: 0, w: w, h: h }];
+  function panelRects() { return LAYOUTS[state.layout]; }
+
+  function photoFor(panel) {
+    if (photos.length === 0) return null;
+    var idx = assign[panel];
+    if (idx === undefined || !photos[idx]) idx = panel % photos.length;
+    return photos[idx];
   }
-  function drawCover(c, w, h) {
-    var ps = panels(w, h);
-    c.fillStyle = '#14091a'; c.fillRect(0, 0, w, h);
-    ps.forEach(function (p, i) {
-      var ph = photos[i % Math.max(photos.length, 1)];
+
+
+  function render(targetCtx, W, H) {
+    var c = targetCtx || ctx;
+    c.save();
+    c.fillStyle = '#0d0712';
+    c.fillRect(0, 0, W, H);
+    panelRects().forEach(function (r, i) {
+      var px = r[0] * W, py = r[1] * H, pw = r[2] * W, ph = r[3] * H;
       c.save();
-      c.beginPath(); c.rect(p.x, p.y, p.w, p.h); c.clip();
-      if (ph && ph.img) {
-        var z = (ph.zoom || 1) * state.zoom;
-        var iw = ph.img.naturalWidth, ih = ph.img.naturalHeight;
-        var s = Math.max(p.w / iw, p.h / ih) * z;
-        var dw = iw * s, dh = ih * s;
-        var dx = p.x + (p.w - dw) / 2 + (ph.pan.x || 0);
-        var dy = p.y + (p.h - dh) / 2 + (ph.pan.y || 0);
-        c.drawImage(ph.img, dx, dy, dw, dh);
-        if (state.grade === 'mono') { c.filter = 'grayscale(1) contrast(1.15)'; c.drawImage(ph.img, dx, dy, dw, dh); c.filter = 'none'; }
-      } else {
-        var g0 = c.createLinearGradient(p.x, p.y, p.x + p.w, p.y + p.h);
-        g0.addColorStop(0, '#ff7a18'); g0.addColorStop(1, '#7b2ff7');
-        c.fillStyle = g0; c.fillRect(p.x, p.y, p.w, p.h);
-      }
-      var cols = GRADES[state.grade];
-      var g = c.createLinearGradient(p.x, p.y, p.x + p.w, p.y + p.h);
-      g.addColorStop(0, cols[0]); g.addColorStop(0.55, cols[1]); g.addColorStop(1, cols[2]);
-      c.globalAlpha = state.grade === 'mono' ? 0.08 : 0.22;
-      c.fillStyle = g; c.fillRect(p.x, p.y, p.w, p.h);
-      c.globalAlpha = 1;
+      c.beginPath();
+      c.rect(px, py, pw, ph);
+      c.clip();
+      var photo = photoFor(i);
+      if (photo) drawPhotoCoverInto(c, photo, px, py, pw, ph);
       c.restore();
-      c.strokeStyle = '#ffffff'; c.lineWidth = Math.max(2, w / 360);
-      c.strokeRect(p.x + 1, p.y + 1, p.w - 2, p.h - 2);
+      // Thin white keyline between panels.
+      c.strokeStyle = 'rgba(255,247,238,0.9)';
+      c.lineWidth = Math.max(2, W * 0.004);
+      c.strokeRect(px + c.lineWidth / 2, py + c.lineWidth / 2, pw - c.lineWidth, ph - c.lineWidth);
     });
-    drawCaption(c, w, h, ps);
+    drawGradeOverlayInto(c, W, H);
+    drawCaptionInto(c, W, H);
+    c.restore();
   }
-  function drawCaption(c, w, h, ps) {
-    var title = (state.title || '').toUpperCase();
-    var fs = Math.round(w * 0.085);
+
+  // The draw helpers take an explicit context so export can reuse them.
+  function drawPhotoCoverInto(c, photo, px, py, pw, ph) {
+    var img = photo.img;
+    var base = Math.max(pw / img.naturalWidth, ph / img.naturalHeight) * photo.zoom;
+    var dw = img.naturalWidth * base, dh = img.naturalHeight * base;
+    var dx = px + (pw - dw) / 2 + photo.panX * pw;
+    var dy = py + (ph - dh) / 2 + photo.panY * ph;
     c.save();
-    c.textAlign = 'center';
-    c.font = '900 ' + fs + 'px system-ui, sans-serif';
-    var y;
-    if (state.place === 'top') y = h * 0.14;
-    else if (state.place === 'hero') y = ps[0].y + ps[0].h * 0.5;
-    else y = h * 0.88;
-    c.translate(w / 2, y);
+    c.filter = GRADES[state.grade].filter;
+    c.drawImage(img, dx, dy, dw, dh);
+    c.restore();
+  }
+  function drawGradeOverlayInto(c, W, H) {
+    var g = c.createLinearGradient(0, 0, W, H);
+    GRADES[state.grade].stops.forEach(function (s) { g.addColorStop(s[0], s[1]); });
+    c.fillStyle = g;
+    c.fillRect(0, 0, W, H);
+  }
+  function drawCaptionInto(c, W, H) {
+    var title = state.title.toUpperCase() || 'VICE CITY';
+    var bandH = H * 0.24;
+    var y0 = state.captionPos === 'top' ? 0 : H - bandH;
+    if (state.captionPos === 'hero') {
+      var hero = panelRects()[0];
+      y0 = hero[1] * H + hero[3] * H - bandH;
+    }
+    var band = c.createLinearGradient(0, y0, 0, y0 + bandH);
+    band.addColorStop(0, 'rgba(10,4,16,0)');
+    band.addColorStop(1, 'rgba(10,4,16,0.62)');
+    c.fillStyle = band;
+    c.fillRect(0, y0, W, bandH);
+    var cx = W / 2, cy = y0 + bandH * 0.52;
+    c.save();
+    c.translate(cx, cy);
     c.rotate(-0.03);
-    c.lineWidth = Math.max(3, fs / 12); c.strokeStyle = '#14091a';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    var px = Math.round(W * 0.105);
+    c.font = '900 ' + px + 'px system-ui, "Segoe UI", Arial, sans-serif';
+    c.shadowColor = 'rgba(255,46,136,0.55)';
+    c.shadowBlur = px * 0.25;
+    c.shadowOffsetY = px * 0.05;
+    c.lineWidth = Math.max(3, px * 0.09);
+    c.strokeStyle = '#160818';
     c.strokeText(title, 0, 0);
-    c.fillStyle = '#ffffff'; c.fillText(title, 0, 0);
+    c.fillStyle = '#fff7ee';
+    c.fillText(title, 0, 0);
     c.restore();
     c.save();
     c.textAlign = 'center';
-    c.font = '700 ' + Math.round(w * 0.022) + 'px system-ui, sans-serif';
-    c.fillStyle = '#ffd166';
-    var sy = state.place === 'top' ? h * 0.14 + fs * 0.9 : (state.place === 'hero' ? ps[0].y + ps[0].h * 0.5 + fs * 0.9 : h * 0.88 + fs * 0.9);
-    c.fillText(state.subtitle, w / 2, Math.min(sy, h - 8));
+    c.textBaseline = 'alphabetic';
+    try { c.letterSpacing = Math.round(W * 0.006) + 'px'; } catch (e) {}
+    c.font = '700 ' + Math.round(W * 0.028) + 'px system-ui, "Segoe UI", Arial, sans-serif';
+    c.fillStyle = '#ffc53d';
+    c.fillText(state.subtitle.toUpperCase(), cx, y0 + bandH * 0.86);
+    c.font = '700 ' + Math.round(W * 0.02) + 'px system-ui, "Segoe UI", Arial, sans-serif';
+    c.fillStyle = 'rgba(255,247,238,0.9)';
+    c.fillText('VICE CITY — 2026', cx, y0 + bandH * 0.12);
     c.restore();
   }
-  function render() {
-    var wh = sizeWH();
-    canvas.width = wh[0]; canvas.height = wh[1];
-    drawCover(ctx, wh[0], wh[1]);
-    syncUI();
-    var q = new URLSearchParams();
-    q.set('layout', state.layout); q.set('grade', state.grade);
-    q.set('size', state.size); q.set('caption', state.title);
-    history.replaceState(null, '', '?' + q.toString());
-    window.__atelierReady = photos.length > 0;
+
+  function draw() {
+    var dims = SIZES[state.size];
+    canvas.width = dims[0];
+    canvas.height = dims[1];
+    render(ctx, dims[0], dims[1]);
+    syncControls();
+    syncUrl();
   }
-  function syncUI() {
-    document.querySelectorAll('#layoutRow button').forEach(function (b) { b.classList.toggle('active', b.dataset.layout === state.layout); });
-    document.querySelectorAll('#gradeRow button').forEach(function (b) { b.classList.toggle('active', b.dataset.grade === state.grade); });
-    document.querySelectorAll('#sizeRow button').forEach(function (b) { b.classList.toggle('active', b.dataset.size === state.size); });
-    var row = document.getElementById('photoRow');
-    row.innerHTML = '';
-    photos.forEach(function (p, i) {
-      var t = document.createElement('img');
-      t.className = 'thumb' + (i === state.selected ? ' active' : '');
-      t.src = p.img.src; t.alt = p.name || ('photo ' + (i + 1));
-      t.addEventListener('click', function () { state.selected = i; render(); });
-      row.appendChild(t);
+
+  function syncControls() {
+    document.querySelectorAll('#layoutRow button').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.dataset.layout === state.layout ? 'true' : 'false');
     });
-    document.getElementById('title').value = state.title;
+    document.querySelectorAll('#gradeRow button').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.dataset.grade === state.grade ? 'true' : 'false');
+    });
+    document.querySelectorAll('#sizeRow button').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.dataset.size === state.size ? 'true' : 'false');
+    });
+    var strip = document.getElementById('photoStrip');
+    strip.innerHTML = '';
+    photos.forEach(function (p, i) {
+      var thumb = document.createElement('img');
+      thumb.src = p.img.src;
+      thumb.alt = p.name;
+      thumb.title = p.name + ' — click to select';
+      thumb.setAttribute('aria-pressed', i === state.selected ? 'true' : 'false');
+      thumb.addEventListener('click', function () { state.selected = i; draw(); });
+      strip.appendChild(thumb);
+    });
+    var zoom = document.getElementById('zoomRange');
+    zoom.value = photos[state.selected] ? photos[state.selected].zoom : 1;
   }
-  function addPhoto(img, name) {
-    if (photos.length >= 3) photos.shift();
-    photos.push({ img: img, name: name, pan: { x: 0, y: 0 }, zoom: 1 });
-    state.selected = photos.length - 1;
-    statusEl.textContent = photos.length + ' photo(s) loaded.';
-    render();
+
+  function syncUrl() {
+    var q = new URLSearchParams();
+    q.set('layout', state.layout);
+    q.set('grade', state.grade);
+    q.set('size', state.size);
+    q.set('caption', state.title);
+    q.set('pos', state.captionPos);
+    history.replaceState(null, '', '?' + q.toString());
   }
-  function loadFile(file) {
-    var img = new Image();
-    img.onload = function () { addPhoto(img, file.name); };
-    img.onerror = function () { statusEl.textContent = 'Could not load ' + file.name; };
-    img.src = URL.createObjectURL(file);
-  }
-  function loadSample() {
-    var img = new Image();
-    img.onload = function () { addPhoto(img, 'pier.jpg'); };
-    img.onerror = function () { statusEl.textContent = 'Sample photo missing — load your own photos.'; render(); };
-    img.src = './samples/pier.jpg';
-  }
-  function exportPNG() {
-    var wh = sizeWH();
+
+  function exportPng() {
+    var dims = SIZES[state.size];
     var off = document.createElement('canvas');
-    off.width = wh[0]; off.height = wh[1];
-    drawCover(off.getContext('2d'), wh[0], wh[1]);
-    var done = function (blob) {
-      window.__exportResult = { width: wh[0], height: wh[1], bytes: blob ? blob.size : 0, ok: !!blob };
-      if (!blob) { statusEl.textContent = 'Export failed.'; return; }
+    off.width = dims[0];
+    off.height = dims[1];
+    render(off.getContext('2d'), dims[0], dims[1]);
+    off.toBlob(function (blob) {
+      if (!blob) return;
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'vice-cover-' + state.size + '.png';
       a.click();
-      statusEl.textContent = 'Exported ' + a.download + ' (' + blob.size + ' bytes).';
-    };
-    if (off.toBlob) off.toBlob(done, 'image/png');
-    else done(null);
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    }, 'image/png');
   }
-  // Controls
+
+  function addPhoto(img, name) {
+    if (photos.length >= 3) photos.shift();
+    photos.push({ img: img, name: name, zoom: 1, panX: 0, panY: 0 });
+    state.selected = photos.length - 1;
+    draw();
+  }
+
+  function loadSample(src, name) {
+    var img = new Image();
+    img.onload = function () { addPhoto(img, name); };
+    img.src = src;
+  }
+
+  // Controls.
   document.querySelectorAll('#layoutRow button').forEach(function (b) {
-    b.addEventListener('click', function () { state.layout = b.dataset.layout; render(); });
+    b.addEventListener('click', function () { state.layout = b.dataset.layout; draw(); });
   });
   document.querySelectorAll('#gradeRow button').forEach(function (b) {
-    b.addEventListener('click', function () { state.grade = b.dataset.grade; render(); });
+    b.addEventListener('click', function () { state.grade = b.dataset.grade; draw(); });
   });
   document.querySelectorAll('#sizeRow button').forEach(function (b) {
-    b.addEventListener('click', function () { state.size = b.dataset.size; render(); });
+    b.addEventListener('click', function () { state.size = b.dataset.size; draw(); });
   });
   document.getElementById('shuffleBtn').addEventListener('click', function () {
-    state.layout = LAYOUTS[(LAYOUTS.indexOf(state.layout) + 1) % LAYOUTS.length]; render();
+    var next = (LAYOUT_ORDER.indexOf(state.layout) + 1) % LAYOUT_ORDER.length;
+    state.layout = LAYOUT_ORDER[next];
+    draw();
   });
-  document.getElementById('photos').addEventListener('change', function (e) {
-    Array.prototype.forEach.call(e.target.files, loadFile);
+  document.getElementById('exportBtn').addEventListener('click', exportPng);
+  document.getElementById('titleInput').addEventListener('input', function (e) {
+    state.title = e.target.value.slice(0, 24);
+    draw();
   });
-  document.getElementById('title').addEventListener('input', function (e) { state.title = e.target.value; render(); });
-  document.getElementById('subtitle').addEventListener('input', function (e) { state.subtitle = e.target.value; render(); });
-  document.getElementById('place').addEventListener('change', function (e) { state.place = e.target.value; render(); });
-  document.getElementById('zoom').addEventListener('input', function (e) { state.zoom = parseFloat(e.target.value); render(); });
-  document.getElementById('exportBtn').addEventListener('click', exportPNG);
-  stage.addEventListener('dragover', function (e) { e.preventDefault(); });
-  stage.addEventListener('drop', function (e) {
-    e.preventDefault();
-    Array.prototype.forEach.call(e.dataTransfer.files, loadFile);
+  document.getElementById('subtitleInput').addEventListener('input', function (e) {
+    state.subtitle = e.target.value.slice(0, 40);
+    draw();
   });
-  var drag = null;
-  canvas.addEventListener('pointerdown', function (e) { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+  document.getElementById('captionPos').addEventListener('change', function (e) {
+    state.captionPos = e.target.value;
+    draw();
+  });
+  document.getElementById('zoomRange').addEventListener('input', function (e) {
+    var p = photos[state.selected];
+    if (p) { p.zoom = parseFloat(e.target.value); draw(); }
+  });
+  document.getElementById('photoInput').addEventListener('change', function (e) {
+    Array.prototype.forEach.call(e.target.files, function (file) {
+      var img = new Image();
+      img.onload = function () { addPhoto(img, file.name); };
+      img.src = URL.createObjectURL(file);
+    });
+    e.target.value = '';
+  });
+
+  // Stage: click a panel assigns the selected photo; drag inside pans it.
+  function panelAt(clientX, clientY) {
+    var box = canvas.getBoundingClientRect();
+    var x = (clientX - box.left) / box.width, y = (clientY - box.top) / box.height;
+    for (var i = 0; i < panelRects().length; i++) {
+      var r = panelRects()[i];
+      if (x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]) return { index: i, x: x, y: y, rect: r };
+    }
+    return null;
+  }
+  canvas.addEventListener('pointerdown', function (e) {
+    var hit = panelAt(e.clientX, e.clientY);
+    if (!hit) return;
+    drag = { panel: hit.index, moved: false, lastX: hit.x, lastY: hit.y };
+    canvas.setPointerCapture(e.pointerId);
+  });
   canvas.addEventListener('pointermove', function (e) {
-    if (!drag || !photos[state.selected]) return;
-    var r = canvas.getBoundingClientRect();
-    var scale = canvas.width / r.width;
-    photos[state.selected].pan.x += (e.clientX - drag.x) * scale;
-    photos[state.selected].pan.y += (e.clientY - drag.y) * scale;
-    drag = { x: e.clientX, y: e.clientY };
-    render();
+    if (!drag) return;
+    var hit = panelAt(e.clientX, e.clientY);
+    if (!hit) return;
+    var photo = photoFor(drag.panel);
+    if (photo) {
+      photo.panX += (hit.x - drag.lastX) / hit.rect[2];
+      photo.panY += (hit.y - drag.lastY) / hit.rect[3];
+      photo.panX = Math.max(-0.5, Math.min(0.5, photo.panX));
+      photo.panY = Math.max(-0.5, Math.min(0.5, photo.panY));
+      if (Math.abs(hit.x - drag.lastX) + Math.abs(hit.y - drag.lastY) > 0.004) drag.moved = true;
+      drag.lastX = hit.x;
+      drag.lastY = hit.y;
+      draw();
+    }
   });
-  canvas.addEventListener('pointerup', function () { drag = null; });
-  canvas.addEventListener('click', function (e) {
-    var r = canvas.getBoundingClientRect();
-    var x = (e.clientX - r.left) / r.width * canvas.width;
-    var y = (e.clientY - r.top) / r.height * canvas.height;
-    var ps = panels(canvas.width, canvas.height);
-    var hit = ps.findIndex(function (p) { return x >= p.x && x < p.x + p.w && y >= p.y && y < p.y + p.h; });
-    if (hit >= 0 && photos.length) { state.selected = Math.min(hit, photos.length - 1); render(); }
+  canvas.addEventListener('pointerup', function () {
+    if (drag && !drag.moved && photos[state.selected]) {
+      assign[drag.panel] = state.selected;
+      draw();
+    }
+    drag = null;
   });
+  canvas.addEventListener('dragover', function (e) { e.preventDefault(); });
+  canvas.addEventListener('drop', function (e) {
+    e.preventDefault();
+    Array.prototype.forEach.call(e.dataTransfer.files, function (file) {
+      if (!file.type || file.type.indexOf('image/') !== 0) return;
+      var img = new Image();
+      img.onload = function () { addPhoto(img, file.name); };
+      img.src = URL.createObjectURL(file);
+    });
+  });
+
   document.addEventListener('keydown', function (e) {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
-    if (e.key >= '1' && e.key <= '4') { state.layout = LAYOUTS[parseInt(e.key, 10) - 1]; render(); }
-    if (e.key === 'e' || e.key === 'E') exportPNG();
+    if (e.key >= '1' && e.key <= '4') { state.layout = LAYOUT_ORDER[Number(e.key) - 1]; draw(); }
+    if (e.key === 'e' || e.key === 'E') exportPng();
   });
-  // Auto-export hook used by headless verification: ?export=1 triggers one export after load.
-  var wantExport = params.get('export') === '1';
-  loadSample();
-  render();
-  if (wantExport) setTimeout(exportPNG, 600);
+
+  // First paint never opens empty: auto-load the bundled samples.
+  document.getElementById('titleInput').value = state.title;
+  document.getElementById('captionPos').value = state.captionPos;
+  loadSample('samples/pier.jpg', 'pier.jpg');
+  loadSample('samples/boulevard.jpg', 'boulevard.jpg');
+  draw();
 })();

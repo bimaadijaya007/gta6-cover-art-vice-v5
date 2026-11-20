@@ -3,31 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sunset Vice Atelier — GTA-style Cover Maker</title>
-<link rel="stylesheet" href="./atelier.css">
+<title>Sunset Vice Atelier — GTA-style cover maker</title>
+<link rel="stylesheet" href="atelier.css">
 </head>
 <body>
-<header class="top">
-  <div>
+<header class="topbar">
+  <div class="brand">
     <h1>SUNSET VICE ATELIER</h1>
-    <p class="sub">Turn 1–3 photos and a caption into GTA-style multi-panel cover art.</p>
+    <p class="tagline">Turn 1&ndash;3 photos + a caption into GTA-style multi-panel cover art</p>
   </div>
   <div class="top-actions">
-    <label class="btn" for="photos">Load photos</label>
-    <input id="photos" type="file" accept="image/*" multiple hidden>
-    <button id="exportBtn" class="btn accent" type="button">Export PNG</button>
+    <label class="btn" for="photoInput">Load photos</label>
+    <input id="photoInput" type="file" accept="image/*" multiple hidden>
+    <button id="exportBtn" class="btn btn-hot" type="button">Export PNG</button>
   </div>
 </header>
-<main class="wrap">
-  <section class="stage-col">
-    <div class="stage" id="stage">
-      <canvas id="cover" width="1080" height="1080" aria-label="The cover"></canvas>
-      <p class="drop-hint">Drop photos here, or click a panel to assign the selected photo.</p>
-    </div>
-    <p class="status" id="status" role="status">Loading sample photo…</p>
+
+<main class="workbench">
+  <section class="stage-wrap">
+    <canvas id="stage" width="1080" height="1080" aria-label="Live cover preview"></canvas>
+    <p class="stage-hint">Drop photos onto the stage &middot; click a panel to assign the selected photo &middot; drag inside a panel to pan it</p>
   </section>
-  <aside class="deck">
-    <section>
+
+  <aside class="deck" aria-label="Control deck">
+    <section class="deck-section">
       <h2>Layout</h2>
       <div class="row" id="layoutRow">
         <button type="button" data-layout="hero">Hero Trio</button>
@@ -35,46 +34,60 @@
         <button type="button" data-layout="quad">Quad</button>
         <button type="button" data-layout="solo">Solo Poster</button>
       </div>
-      <button id="shuffleBtn" type="button">Shuffle layout</button>
+      <button id="shuffleBtn" type="button" class="btn btn-ghost">Shuffle layout</button>
     </section>
-    <section>
+
+    <section class="deck-section">
       <h2>Photos</h2>
-      <div class="row" id="photoRow"></div>
-      <label>Zoom <input id="zoom" type="range" min="1" max="2.5" step="0.05" value="1"></label>
-      <p class="hint">Drag inside a panel to pan. Click a panel to assign the selected photo.</p>
+      <div id="photoStrip" class="strip" aria-label="Loaded photos"></div>
+      <label class="field">Zoom selected photo
+        <input id="zoomRange" type="range" min="1" max="2.5" step="0.05" value="1">
+      </label>
+      <p class="note">Up to 3 photos. One photo can fill every panel; several photos fill one panel each.</p>
     </section>
-    <section>
+
+    <section class="deck-section">
       <h2>Grade</h2>
       <div class="row" id="gradeRow">
         <button type="button" data-grade="sunset">Vice Sunset</button>
         <button type="button" data-grade="neon">Neon Nights</button>
         <button type="button" data-grade="golden">Golden Hour</button>
-        <button type="button" data-grade="mono">Mono Noir</button>
+        <button type="button" data-grade="noir">Mono Noir</button>
       </div>
     </section>
-    <section>
+
+    <section class="deck-section">
       <h2>Caption</h2>
-      <label>Title <input id="title" type="text" maxlength="40" value="SUNSET HEIST"></label>
-      <label>Subtitle <input id="subtitle" type="text" maxlength="60" value="VICE CITY — 2026"></label>
-      <label>Placement
-        <select id="place">
+      <label class="field">Title
+        <input id="titleInput" type="text" value="VICE CITY" maxlength="24">
+      </label>
+      <label class="field">Subtitle
+        <input id="subtitleInput" type="text" value="SUNSET STORIES" maxlength="40">
+      </label>
+      <label class="field">Placement
+        <select id="captionPos">
+          <option value="bottom">Bottom</option>
           <option value="top">Top</option>
-          <option value="bottom" selected>Bottom</option>
           <option value="hero">Over hero panel</option>
         </select>
       </label>
     </section>
-    <section>
+
+    <section class="deck-section">
       <h2>Size</h2>
       <div class="row" id="sizeRow">
-        <button type="button" data-size="1080x1080">1080 × 1080</button>
-        <button type="button" data-size="1080x1350">1080 × 1350</button>
-        <button type="button" data-size="1920x1080">1920 × 1080</button>
+        <button type="button" data-size="1080x1080">1080 &times; 1080</button>
+        <button type="button" data-size="1080x1350">1080 &times; 1350</button>
+        <button type="button" data-size="1920x1080">1920 &times; 1080</button>
       </div>
     </section>
   </aside>
 </main>
-<footer class="foot">Keys 1–4 switch layout · E exports · all offline, no uploads</footer>
-<script src="./atelier.js"></script>
+
+<footer class="foot">
+  <p>Keys <kbd>1</kbd>&ndash;<kbd>4</kbd> switch layout &middot; <kbd>E</kbd> exports PNG &middot; state lives in the URL, so any cover is reproducible from a link &middot; fully offline, no uploads</p>
+</footer>
+
+<script src="atelier.js"></script>
 </body>
 </html>

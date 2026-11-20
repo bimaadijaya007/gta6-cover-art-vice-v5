@@ -1,26 +1,99 @@
+/* Sunset Vice Atelier — dark deck, sunset accents, responsive. */
+:root {
+  --ink: #fff7ee;
+  --muted: #c9b8a8;
+  --panel: #1c1420;
+  --panel-2: #241a2b;
+  --line: #3d2c46;
+  --sunset: #ff7a18;
+  --magenta: #ff2e88;
+  --gold: #ffc53d;
+  --cyan: #2ee6ff;
+}
 * { box-sizing: border-box; }
-body { margin: 0; background: #14091a; color: #f5e9f0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-.top { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 20px; background: linear-gradient(90deg, #ff7a18, #ff2e63 55%, #7b2ff7); }
-.top h1 { margin: 0; font-size: 26px; letter-spacing: 2px; font-weight: 900; text-shadow: 2px 2px 0 #14091a; }
-.sub { margin: 2px 0 0; font-size: 13px; opacity: .95; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: linear-gradient(160deg, #120a18 0%, #241028 55%, #160f1e 100%);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  min-height: 100vh;
+}
+.topbar {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  justify-content: space-between; padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(90deg, rgba(255,122,24,.18), rgba(255,46,136,.14) 55%, transparent);
+}
+.brand h1 {
+  margin: 0; font-size: 26px; font-weight: 900; letter-spacing: .06em;
+  background: linear-gradient(90deg, var(--gold), var(--sunset) 45%, var(--magenta));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.tagline { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
 .top-actions { display: flex; gap: 10px; align-items: center; }
-.btn { display: inline-block; background: #fff; color: #14091a; border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 800; cursor: pointer; font-size: 14px; }
-.btn.accent { background: #14091a; color: #ffd166; }
-.wrap { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; padding: 18px 20px; max-width: 1280px; margin: 0 auto; }
-.stage { background: #000; border: 2px solid #ff2e63; border-radius: 12px; overflow: hidden; position: relative; }
-.stage canvas { display: block; width: auto; max-width: 100%; max-height: calc(100vh - 230px); margin: 0 auto; }
-.drop-hint { position: absolute; left: 10px; top: 8px; margin: 0; font-size: 12px; background: rgba(0,0,0,.6); padding: 4px 8px; border-radius: 6px; }
-.status { font-size: 13px; color: #ffb3c8; }
-.deck { display: flex; flex-direction: column; gap: 14px; }
-.deck section { background: #241028; border: 1px solid #4a2140; border-radius: 12px; padding: 12px 14px; }
-.deck h2 { margin: 0 0 8px; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: #ffd166; }
+.btn {
+  display: inline-block; cursor: pointer; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--ink); border-radius: 999px;
+  padding: 10px 18px; font-size: 14px; font-weight: 700;
+}
+.btn:hover { border-color: var(--sunset); }
+.btn-hot {
+  background: linear-gradient(90deg, var(--sunset), var(--magenta));
+  border-color: transparent; color: #fff;
+}
+.btn-ghost { width: 100%; margin-top: 8px; }
+.workbench {
+  display: grid; grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px; padding: 18px 20px; align-items: start;
+}
+.stage-wrap { min-width: 0; }
+#stage {
+  display: block; width: 100%; max-width: 620px; height: auto;
+  margin: 0 auto; border-radius: 10px; background: #000;
+  box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 0 0 1px var(--line);
+}
+.stage-hint { color: var(--muted); font-size: 12.5px; text-align: center; }
+.deck {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  padding: 6px 16px 16px; position: sticky; top: 12px;
+}
+.deck-section { border-top: 1px solid var(--line); padding: 12px 0 4px; }
+.deck-section:first-child { border-top: 0; }
+.deck h2 {
+  margin: 0 0 10px; font-size: 12px; text-transform: uppercase;
+  letter-spacing: .18em; color: var(--gold);
+}
 .row { display: flex; flex-wrap: wrap; gap: 8px; }
-.row button, #shuffleBtn { background: #3a1a34; color: #f5e9f0; border: 1px solid #6b3357; border-radius: 8px; padding: 8px 10px; cursor: pointer; font-size: 13px; }
-.row button.active, .thumb.active { background: #ff2e63; border-color: #ff2e63; color: #fff; }
-.deck label { display: block; font-size: 13px; margin: 6px 0; }
-.deck input[type=text], .deck select { width: 100%; padding: 8px; margin-top: 4px; border-radius: 8px; border: 1px solid #6b3357; background: #14091a; color: #f5e9f0; }
-.deck input[type=range] { width: 100%; }
-.hint { font-size: 12px; color: #c9a3bb; }
-.thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 2px solid #6b3357; cursor: pointer; }
-.foot { text-align: center; font-size: 12px; color: #c9a3bb; padding: 0 0 16px; }
-@media (max-width: 820px) { .wrap { grid-template-columns: 1fr; } .top { flex-direction: column; align-items: flex-start; } }
+.row button {
+  cursor: pointer; border: 1px solid var(--line); background: var(--panel-2);
+  color: var(--ink); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+}
+.row button[aria-pressed="true"] {
+  border-color: var(--sunset); background: linear-gradient(90deg, rgba(255,122,24,.35), rgba(255,46,136,.35));
+  font-weight: 700;
+}
+.field { display: block; font-size: 13px; color: var(--muted); margin: 8px 0; }
+.field input, .field select {
+  display: block; width: 100%; margin-top: 5px; padding: 9px 10px;
+  border-radius: 8px; border: 1px solid var(--line);
+  background: #120c16; color: var(--ink); font-size: 14px;
+}
+.field input[type="range"] { padding: 0; accent-color: var(--sunset); }
+.strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.strip img {
+  width: 64px; height: 64px; object-fit: cover; border-radius: 8px;
+  border: 2px solid transparent; cursor: pointer; background: #000;
+}
+.strip img[aria-pressed="true"] { border-color: var(--cyan); }
+.note { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.foot { padding: 4px 20px 18px; color: var(--muted); font-size: 12.5px; }
+.foot kbd {
+  border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px;
+  padding: 1px 6px; background: var(--panel-2); color: var(--ink);
+  font-family: inherit;
+}
+@media (max-width: 900px) {
+  .workbench { grid-template-columns: 1fr; }
+  .deck { position: static; }
+  .brand h1 { font-size: 21px; }
+}
